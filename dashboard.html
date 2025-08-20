@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sports Stream Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://embedsports.top" crossorigin>
+  <style>
+    :root { --bg:#0d1117; --panel:#161b22; --card:#1e2633; --border:#30363d; --accent:#58a6ff; --muted:#8b949e; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:#fff;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto}
+    header{display:flex;gap:16px;align-items:center;justify-content:space-between;background:var(--panel);padding:12px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5}
+    h1{margin:0;font-size:18px;color:var(--accent)}
+    .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    input,select,button{background:var(--card);border:1px solid var(--border);color:#fff;border-radius:8px;padding:8px 10px}
+    button{background:var(--accent);border:none;font-weight:600;cursor:pointer}
+    button.ghost{background:var(--card)}
+    main{padding:18px}
+    #error{display:none;margin-bottom:12px;padding:10px 12px;border:1px solid #8b3b3b;background:#2a1212;color:#ffb3b3;border-radius:8px;white-space:pre-wrap}
+
+    #games{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+    .game-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px;transition:transform .15s}
+    .game-card:hover{transform:scale(1.02);border-color:var(--accent)}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .spacer{flex:1}
+    .muted{color:var(--muted)}
+    .pill{font-size:12px;border:1px solid var(--border);border-radius:999px;padding:2px 8px;background:#121722;color:#cbd5e1}
+    .btns{display:flex;gap:6px;flex-wrap:wrap}
+    .btns button{padding:6px 10px;border-radius:8px}
+
+    .tray{position:sticky;bottom:0;z-index:6;background:rgba(12,18,30,.95);backdrop-filter:blur(6px);border-top:1px solid var(--border)}
+    .tray-inner{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .chip{display:flex;gap:6px;align-items:center;background:#141b27;border:1px solid var(--border);border-radius:999px;padding:6px 10px;font-size:13px}
+    .chip button{background:transparent;border:1px solid #2b3443;border-radius:8px;color:#cbd5e1;cursor:pointer;padding:2px 6px}
+
+    #player,#multicast{position:fixed;inset:0;background:var(--bg);display:none;flex-direction:column;z-index:10}
+    #player iframe,#multicast iframe{width:100%;height:100%;border:0}
+
+    .topbar{display:flex;gap:8px;align-items:center;padding:10px;border-bottom:1px solid var(--border);background:var(--panel)}
+    .topbar .spacer{flex:1}
+
+    #multicastGrid{display:grid;flex:1;gap:6px;background:#0b1220}
+    .cell{position:relative;border:1px solid #1b2438;border-radius:6px;overflow:hidden}
+    .cell.active{outline:2px solid var(--accent)}
+    .cell .badge{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.45);padding:2px 6px;border-radius:8px;font-size:12px}
+    .cell .bar{position:absolute;right:8px;top:8px;display:flex;gap:6px}
+    .cell .bar button{background:rgba(0,0,0,.45);border:1px solid #2d3455;border-radius:8px;padding:2px 6px;color:#e5eafe;cursor:pointer;font-size:12px}
+
+    :fullscreen #multicastGrid, :-webkit-full-screen #multicastGrid { height:100vh; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Sports Stream Dashboard</h1>
+    <div class="controls">
+      <input type="date" id="fetchDate" />
+      <select id="leagues" multiple title="Select leagues">
+        <option value="mlb" selected>MLB</option>
+        <option value="nba" selected>NBA</option>
+        <option value="nhl" selected>NHL</option>
+        <option value="nfl" selected>NFL</option>
+        <option value="ufc">UFC</option>
+      </select>
+      <button id="fetchBtn">Fetch</button>
+      <button id="refreshBtn" class="ghost">Refresh</button>
+      <button id="openMultiBtn" class="ghost">Open Multicast (0)</button>
+      <button id="clearTrayBtn" class="ghost">Clear Tray</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="error"></div>
+    <div id="games"></div>
+  </main>
+
+  <!-- Multicast tray -->
+  <div class="tray">
+    <div class="tray-inner">
+      <strong>Multicast tray:</strong>
+      <div id="chips" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      <span class="spacer"></span>
+      <span class="muted">Add games, then “Open Multicast”. All tiles try autoplay muted; focusing reloads that tile unmuted.</span>
+    </div>
+  </div>
+
+  <!-- Single player -->
+  <section id="player">
+    <div class="topbar">
+      <strong>Player</strong><span class="spacer"></span>
+      <button id="closePlayer" class="ghost">Close</button>
+    </div>
+    <iframe id="playerFrame" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="no-referrer" allowfullscreen></iframe>
+  </section>
+
+  <!-- Multicast -->
+  <section id="multicast">
+    <div class="topbar">
+      <strong>Multicast</strong>
+      <span class="muted">Shortcuts: 1–4 focus · F fullscreen · “Open in new tab” for guaranteed sound</span>
+      <span class="spacer"></span>
+      <button id="fsBtn" class="ghost">Fullscreen</button>
+      <button id="closeMulti" class="ghost">Close</button>
+    </div>
+    <div id="multicastGrid"></div>
+  </section>
+
+  <script>
+    // ---------- helpers ----------
+    const $ = s => document.querySelector(s);
+    const todayStr = ()=> new Date().toISOString().slice(0,10);
+    const toYYYYMMDD = (iso)=> iso.replace(/-/g,'');
+    const addParam = (u,k,v)=>{ try{const x=new URL(u); x.searchParams.set(k,v); return x.toString(); }catch(_){const sep=u.includes('?')?'&':'?'; return `${u}${sep}${encodeURIComponent(k)}=${encodeURIComponent(v)}`;} };
+
+    // Aggressive autoplay flag bundle (best-effort; player must honor)
+    function buildAutoplaySrc(baseUrl, { unmuted }) {
+      let u = baseUrl;
+      u = addParam(u, 'autoplay', '1');
+      u = addParam(u, 'autoPlay', 'true');
+      u = addParam(u, 'autostart', 'true');
+      u = addParam(u, 'playsinline', '1');
+      if (unmuted) {
+        u = addParam(u, 'muted', 'false');
+        u = addParam(u, 'mute', '0');
+        u = addParam(u, 'silence', '0');
+        u = addParam(u, 'volume', '1');
+      } else {
+        u = addParam(u, 'muted', 'true');
+        u = addParam(u, 'mute', '1');
+        u = addParam(u, 'silence', '1');
+        u = addParam(u, 'volume', '0');
+      }
+      return u;
+    }
+
+    // Try to "kick" players that expose postMessage APIs (YouTube/Vimeo/others)
+    function tryKickAutoplay(frame){
+      try{
+        const w = frame.contentWindow;
+        if(!w) return;
+        // Generic attempts
+        w.postMessage({ method:'play' }, '*');              // Vimeo-style
+        w.postMessage({ event:'command', func:'playVideo' }, '*'); // YouTube-style
+        w.postMessage('play', '*');                         // some custom players
+      }catch(_){}
+    }
+
+    // Slug + provider URL (single feed)
+    const slugify = s => (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/&/g,'and').replace(/[^a-z0-9\s-]/g,'').trim().replace(/\s+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+    const ppvSlug = (away, home)=> `ppv-${slugify(away)}-vs-${slugify(home)}`;
+    const embedURL = (away, home)=> `https://embedsports.top/embed/admin/${ppvSlug(away,home)}/1`;
+
+    // ESPN APIs
+    const ESPN = {
+      mlb: d => `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${d}`,
+      nba: d => `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${d}`,
+      nhl: d => `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard?dates=${d}`,
+      nfl: d => `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${d}`,
+      ufc: _ => `https://site.api.espn.com/apis/personalized/v2/scoreboard/header?sport=mma&league=ufc`
+    };
+
+    function parseEvent(evt){
+      const comps = evt?.competitions?.[0]?.competitors || [];
+      const h = comps.find(c=>c.homeAway==='home') || comps[0] || {};
+      const a = comps.find(c=>c.homeAway==='away') || comps[1] || {};
+      const ht = h.team || {}, at = a.team || {};
+      const home = ht.displayName || ((ht.location&&ht.name)?`${ht.location} ${ht.name}`:(ht.name||ht.shortDisplayName||'Home'));
+      const away = at.displayName || ((at.location&&at.name)?`${at.location} ${at.name}`:(at.name||at.shortDisplayName||'Away'));
+      const iso = evt.date || evt.startDate; const dt = iso?new Date(iso):null;
+      const date = dt?dt.toISOString().slice(0,10):''; const time = dt?dt.toTimeString().slice(0,5):'';
+      return { away, home, date, time };
+    }
+
+    async function fetchLeague(league, isoDate){
+      try{
+        const url = league==='ufc' ? ESPN.ufc() : ESPN[league](toYYYYMMDD(isoDate));
+        const res = await fetch(url);
+        if(!res.ok) throw new Error(`${league} HTTP ${res.status}`);
+        const data = await res.json();
+        if(league==='ufc'){
+          const leagues = data?.sports?.[0]?.leagues || [];
+          const all = leagues.flatMap(L => L?.events || []);
+          return all.map(e=>{
+            const dt = e.date ? new Date(e.date) : null;
+            const date=dt?dt.toISOString().slice(0,10):''; const time=dt?dt.toTimeString().slice(0,5):'';
+            const m=(e.name||'').match(/(.+?)\s+vs\.?\s+(.+)/i); let away='Fighter A', home='Fighter B';
+            if(m){ away=m[1].trim(); home=m[2].trim(); }
+            return { away, home, date, time, league:'UFC' };
+          });
+        }
+        const events = data?.events || [];
+        return events.map(ev => ({ ...parseEvent(ev), league: league.toUpperCase() }));
+      } catch (err){ addError(`Failed ${league.toUpperCase()} – ${err.message}`); return []; }
+    }
+
+    // ---------- UI: list ----------
+    const errorBox=$('#error'), gamesGrid=$('#games');
+    const fetchDate=$('#fetchDate'), leaguesSel=$('#leagues');
+    const fetchBtn=$('#fetchBtn'), refreshBtn=$('#refreshBtn');
+    const openMultiBtn=$('#openMultiBtn'), clearTrayBtn=$('#clearTrayBtn');
+
+    function clearError(){ errorBox.style.display='none'; errorBox.textContent=''; }
+    function addError(msg){ errorBox.style.display='block'; errorBox.textContent += (errorBox.textContent?'\n':'')+msg; }
+
+    function renderGames(games){
+      gamesGrid.innerHTML = '';
+      if(!games.length){ gamesGrid.innerHTML = `<div class="muted">No games found for ${new Date(fetchDate.value).toDateString()}.</div>`; return; }
+      games.forEach(g=>{
+        const url = embedURL(g.away, g.home);
+        const card = document.createElement('div'); card.className='game-card';
+        card.innerHTML = `
+          <div class="row"><span class="pill">${g.league||''}</span><span class="spacer"></span><span class="muted">${g.date}${g.time?' · '+g.time:''}</span></div>
+          <div style="font-weight:700;font-size:15px">${g.away} at ${g.home}</div>
+          <div class="btns">
+            <button data-watch>Watch</button>
+            <button data-add>➕ Add to Multicast</button>
+            <button data-copy class="ghost">Copy URL</button>
+          </div>`;
+        card.querySelector('[data-watch]').onclick = ()=> openPlayer(url);
+        card.querySelector('[data-add]').onclick  = ()=> addToTray({title:`${g.away} at ${g.home}`, url});
+        card.querySelector('[data-copy]').onclick = ()=> navigator.clipboard?.writeText(url).catch(()=>{});
+        gamesGrid.appendChild(card);
+      });
+    }
+
+    // ---------- Single player ----------
+    const playerPanel=$('#player'), playerFrame=$('#playerFrame');
+    $('#closePlayer').onclick = ()=>{ playerFrame.src='about:blank'; playerPanel.style.display='none'; };
+    function openPlayer(url){
+      // Best effort: ask to autoplay (unmuted); provider may still require a click
+      playerFrame.src = buildAutoplaySrc(url, { unmuted: true });
+      playerPanel.style.display='flex';
+      // Kick once in case the player supports postMessage
+      playerFrame.addEventListener('load', ()=> tryKickAutoplay(playerFrame), { once:true });
+    }
+
+    // ---------- Multicast tray ----------
+    const chips=$('#chips'); const tray=[]; // {title,url}
+    function updateOpenMultiCount(){ openMultiBtn.textContent = `Open Multicast (${tray.length})`; }
+    function addToTray(item){
+      if(tray.find(t=>t.url===item.url)) return;
+      tray.push(item); renderTray(); updateOpenMultiCount();
+      if(multiPanel.style.display==='flex') renderMulticast(); // live update
+    }
+    function removeFromTray(url){
+      const i=tray.findIndex(t=>t.url===url); if(i>=0){ tray.splice(i,1); renderTray(); updateOpenMultiCount(); if(multiPanel.style.display==='flex') renderMulticast(); }
+    }
+    function renderTray(){
+      chips.innerHTML=''; tray.forEach(t=>{ const el=document.createElement('div'); el.className='chip';
+        el.innerHTML=`<span>${t.title}</span><button title="Remove">✕</button>`;
+        el.querySelector('button').onclick=()=>removeFromTray(t.url); chips.appendChild(el);
+      });
+    }
+    clearTrayBtn.onclick = ()=>{ tray.splice(0,tray.length); renderTray(); updateOpenMultiCount(); if(multiPanel.style.display==='flex') renderMulticast(); };
+
+    // ---------- Multicast (soft mode only) ----------
+    const multiPanel=$('#multicast'), mgrid=$('#multicastGrid');
+    $('#closeMulti').onclick = ()=>{ mgrid.innerHTML=''; multiPanel.style.display='none'; };
+
+    // Fullscreen target = grid
+    const fsBtn=$('#fsBtn');
+    const isFS=()=>!!(document.fullscreenElement||document.webkitFullscreenElement||document.mozFullScreenElement||document.msFullscreenElement);
+    const enterFS=async el=>{ try{ if(el.requestFullscreen) await el.requestFullscreen(); else if(el.webkitRequestFullscreen) await el.webkitRequestFullscreen(); else if(el.mozRequestFullScreen) await el.mozRequestFullScreen(); else if(el.msRequestFullscreen) await el.msRequestFullscreen(); }catch{}};
+    const exitFS=async ()=>{ try{ if(document.exitFullscreen) await document.exitFullscreen(); else if(document.webkitExitFullscreen) await document.webkitExitFullscreen(); else if(document.mozCancelFullScreen) await document.mozCancelFullScreen(); else if(document.msExitFullscreen) await document.msExitFullscreen(); }catch{}};
+    fsBtn.onclick = ()=> isFS()?exitFS():enterFS(mgrid);
+    document.addEventListener('keydown', e=>{
+      if(multiPanel.style.display!=='flex') return;
+      if(e.key.toLowerCase()==='f'){ e.preventDefault(); fsBtn.click(); }
+      if(/[1-4]/.test(e.key)){ focusAudio(parseInt(e.key,10)-1); }
+    });
+
+    let audioIndex = 0; // focused tile
+    openMultiBtn.onclick = ()=>{
+      if(!tray.length){ alert('Add at least one game first.'); return; }
+      // Build inside this click (user gesture) for best autoplay chances.
+      audioIndex = 0;
+      renderMulticast();
+      multiPanel.style.display='flex';
+    };
+
+    function setLayout(n){
+      if(n<=1){ mgrid.style.gridTemplateColumns='1fr'; mgrid.style.gridTemplateRows='1fr'; }
+      else if(n===2){ mgrid.style.gridTemplateColumns='1fr 1fr'; mgrid.style.gridTemplateRows='1fr'; }
+      else { mgrid.style.gridTemplateColumns='1fr 1fr'; mgrid.style.gridTemplateRows='1fr 1fr'; }
+    }
+
+    function renderMulticast(){
+      const views = Math.min(4, tray.length || 1);
+      setLayout(views);
+      mgrid.innerHTML='';
+
+      for(let i=0;i<views;i++){
+        const item = tray[i];
+        const cell = document.createElement('div'); cell.className='cell'+(i===audioIndex?' active':'');
+        const badge = document.createElement('div'); badge.className='badge'; badge.textContent = `${i+1}. ${item.title}`;
+        const bar = document.createElement('div'); bar.className='bar';
+
+        const focusBtn = document.createElement('button');
+        focusBtn.dataset.focus = '1';
+        focusBtn.textContent = (i===audioIndex)?'🔊 Focused':'🔇 Focus';
+        focusBtn.onclick = (ev)=>{ ev.stopPropagation(); focusAudio(i); };
+
+        const popBtn = document.createElement('button');
+        popBtn.textContent = 'Open in new tab';
+        popBtn.onclick = (ev)=>{ ev.stopPropagation(); window.open(buildAutoplaySrc(item.url,{unmuted:true}),'_blank','noopener'); };
+
+        bar.appendChild(focusBtn); bar.appendChild(popBtn);
+        cell.appendChild(badge); cell.appendChild(bar);
+
+        const f = document.createElement('iframe');
+        f.setAttribute('allow','autoplay; fullscreen; picture-in-picture; encrypted-media'); // delegate autoplay
+        f.setAttribute('allowfullscreen','');
+        f.referrerPolicy = 'no-referrer';
+        f.dataset.base = item.url;
+        f.dataset.index = String(i);
+        // everyone tries muted; focused asks for sound
+        f.src = buildAutoplaySrc(item.url, { unmuted: i === audioIndex });
+
+        // Try to kick playback as soon as the iframe loads (still within user gesture timing)
+        f.addEventListener('load', ()=> tryKickAutoplay(f), { once:true });
+
+        // click anywhere on cell to focus
+        cell.onclick = ()=> focusAudio(i);
+
+        cell.appendChild(f);
+        mgrid.appendChild(cell);
+      }
+    }
+
+    // Soft focus: reload only the two relevant iframes with new mute flags
+    function focusAudio(next){
+      const tiles = Array.from(mgrid.children);
+      if(!tiles.length || next < 0 || next >= tiles.length) return;
+
+      if(next === audioIndex){
+        tiles.forEach((c,idx)=> c.classList.toggle('active', idx===audioIndex));
+        const b = tiles[next].querySelector('[data-focus]'); if (b) b.textContent = '🔊 Focused';
+        return;
+      }
+
+      const prev = audioIndex;
+      audioIndex = next;
+
+      const prevCell  = tiles[prev];
+      const nextCell  = tiles[next];
+      const prevFrame = prevCell.querySelector('iframe');
+      const nextFrame = nextCell.querySelector('iframe');
+
+      if (prevFrame && prevFrame.dataset.base) {
+        prevFrame.src = buildAutoplaySrc(prevFrame.dataset.base, { unmuted: false });
+        prevFrame.addEventListener('load', ()=> tryKickAutoplay(prevFrame), { once:true });
+      }
+      if (nextFrame && nextFrame.dataset.base) {
+        nextFrame.src = buildAutoplaySrc(nextFrame.dataset.base, { unmuted: true });
+        nextFrame.addEventListener('load', ()=> tryKickAutoplay(nextFrame), { once:true });
+      }
+
+      tiles.forEach((c,idx)=> c.classList.toggle('active', idx===audioIndex));
+      const pb = prevCell.querySelector('[data-focus]'); if (pb) pb.textContent = '🔇 Focus';
+      const nb = nextCell.querySelector('[data-focus]'); if (nb) nb.textContent = '🔊 Focused';
+    }
+
+    // ---------- fetch orchestration ----------
+    async function scrapeAndRender(){
+      clearError();
+      const iso = fetchDate.value || todayStr();
+      const leagues = Array.from(leaguesSel.selectedOptions).map(o=>o.value);
+      const batches = await Promise.all(leagues.map(lg => fetchLeague(lg, iso)));
+      const all = batches.flat().sort((a,b)=>{
+        const da=new Date((a.date||todayStr())+'T'+(a.time||'00:00')); const db=new Date((b.date||todayStr())+'T'+(b.time||'00:00'));
+        return da-db;
+      });
+      renderGames(all);
+    }
+
+    fetchDate.value = todayStr();
+    document.addEventListener('DOMContentLoaded', ()=>{ scrapeAndRender(); setInterval(scrapeAndRender, 60000); });
+    fetchBtn.addEventListener('click', scrapeAndRender);
+    refreshBtn.addEventListener('click', scrapeAndRender);
+  </script>
+</body>
+</html>
