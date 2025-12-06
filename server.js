@@ -7,7 +7,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 import { createClient } from 'redis';
-import { Queue, Worker } from 'bullmq';
+import bullmqPkg from 'bullmq';
+const { Queue, Worker } = bullmqPkg || {};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -980,6 +981,14 @@ async function hydrateAuthorCountsFromRedis(){
 }
 
 async function initTaskQueues(){
+  if(!Queue || !Worker){
+    recapQueue=null;
+    analyticsQueue=null;
+    clipQueue=null;
+    queuesReady=false;
+    console.warn('[queue] Disabled (BullMQ unavailable)');
+    return;
+  }
   try{
     const connection={ connection:{ url:DEFAULT_REDIS_URL } };
     recapQueue=new Queue(QUEUE_NAMES.recap, connection);
@@ -999,7 +1008,7 @@ async function initTaskQueues(){
     analyticsQueue=null;
     clipQueue=null;
     queuesReady=false;
-    console.warn('[queue] Disabled (worker unavailable)');
+    console.warn(`[queue] Disabled (${err.message || 'worker unavailable'})`);
     console.debug(err);
   }
 }
