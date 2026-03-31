@@ -562,7 +562,51 @@
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9\s-]/g, '')
       .trim().replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-    const matchId = (away, home) => `ppv-${slugify(away)}-vs-${slugify(home)}`;
+
+    // ── SportSRC match list (pre-fetched per sport) ───────────────────
+    const srcCache = {};
+
+    async function loadSRCMatches(srcCat) {
+      if (srcCache[srcCat] !== undefined) return srcCache[srcCat];
+      try {
+        const res  = await fetch(`https://api.sportsrc.org/?data=matches&category=${srcCat}`);
+        const data = await res.json();
+        srcCache[srcCat] = data.matches || data.events || [];
+      } catch {
+        srcCache[srcCat] = [];
+      }
+      return srcCache[srcCat];
+    }
+
+    // Find the real SportSRC match ID by comparing team names
+    function findSRCId(matches, away, home) {
+      const aSlug = slugify(away);
+      const hSlug = slugify(home);
+      const aLast = away.split(' ').pop().toLowerCase();
+      const hLast = home.split(' ').pop().toLowerCase();
+
+      // 1. Match ID contains both slugified team names
+      let m = matches.find(x => {
+        const id = (x.id || '').toLowerCase();
+        return id.includes(aSlug) && id.includes(hSlug);
+      });
+      if (m) return m.id;
+
+      // 2. Title contains last word of both team names
+      m = matches.find(x => {
+        const t = (x.title || '').toLowerCase();
+        return t.includes(aLast) && t.includes(hLast);
+      });
+      if (m) return m.id;
+
+      // 3. Structured teams object
+      m = matches.find(x => {
+        const hn = (x.teams?.home?.name || '').toLowerCase();
+        const an = (x.teams?.away?.name || '').toLowerCase();
+        return hn.includes(hLast) && an.includes(aLast);
+      });
+      return m ? m.id : null;
+    }
 
     // ── Build tabs & pages ────────────────────────────────────────────
     const tabsEl  = document.getElementById('sportTabs');
@@ -640,13 +684,12 @@
       }
     }
 
-    // ── SportSRC stream fetch (on demand) ─────────────────────────────
-    async function fetchStreams(srcCat, away, home) {
-      const id  = matchId(away, home);
-      const res = await fetch(`https://api.sportsrc.org/?data=detail&category=${srcCat}&id=${id}`);
+    // ── SportSRC stream fetch (on demand, uses real pre-matched ID) ───
+    async function fetchStreams(srcCat, srcId) {
+      const res = await fetch(`https://api.sportsrc.org/?data=detail&category=${srcCat}&id=${encodeURIComponent(srcId)}`);
       if (!res.ok) throw new Error(`SportSRC HTTP ${res.status}`);
       const data = await res.json();
-      if (!data.streams?.length) throw new Error('No streams available');
+      if (!data.streams?.length) throw new Error('No streams found for this game');
       return data.streams;
     }
 
@@ -700,49 +743,66 @@
     // ── Player ────────────────────────────────────────────────────────
     let currentStreams = [];
 
-    async function openPlayer(game, sport) {
-      const playerEl  = document.getElementById('player');
-      const frameEl   = document.getElementById('playerFrame');
-      const loadEl    = document.getElementById('playerLoading');
-      const btnsEl    = document.getElementById('sourceBtns');
-      const titleEl   = document.getElementById('playerTitle');
-
-      titleEl.textContent = `${game.away}  ·  ${game.home}`;
-      btnsEl.innerHTML = '';
-      frameEl.style.display = 'none';
-      loadEl.style.display  = 'flex';
-      playerEl.style.display = 'flex';
-
-      const streams = await fetchStreams(sport.srcCat, game.away, game.home);
-      currentStreams = streams;
-
-      streams.forEach((s, i) => {
-        const btn = document.createElement('button');
-        btn.className = 'src-btn' + (i === 0 ? ' active' : '');
-        const src = s.source
-          ? s.source.charAt(0).toUpperCase() + s.source.slice(1)
-          : `Stream ${i + 1}`;
-        btn.textContent = `${src} ${s.hd ? '· HD' : '· SD'}`;
-        btn.onclick = () => {
-          document.querySelectorAll('.src-btn').forEach((b, j) =>
-            b.classList.toggle('active', j === i));
-          frameEl.src = s.embedUrl;
-        };
-        btnsEl.appendChild(btn);
-      });
-
-      loadEl.style.display  = 'none';
-      frameEl.style.display = 'block';
-      frameEl.src = streams[0].embedUrl;
-    }
-
-    document.getElementById('closePlayer').onclick = () => {
-      document.getElementById('playerFrame').src   = 'about:blank';
-      document.getElementById('player').style.display      = 'none';
+    function closePlayer() {
+      document.getElementById('playerFrame').src             = 'about:blank';
+      document.getElementById('player').style.display        = 'none';
       document.getElementById('playerLoading').style.display = 'none';
       document.getElementById('playerFrame').style.display   = 'block';
       currentStreams = [];
-    };
+    }
+
+    async function openPlayer(game, sport) {
+      const playerEl = document.getElementById('player');
+      const frameEl  = document.getElementById('playerFrame');
+      const loadEl   = document.getElementById('playerLoading');
+      const btnsEl   = document.getElementById('sourceBtns');
+      const titleEl  = document.getElementById('playerTitle');
+
+      // Show overlay in loading state
+      titleEl.textContent    = `${game.away}  ·  ${game.home}`;
+      btnsEl.innerHTML       = '';
+      frameEl.style.display  = 'none';
+      loadEl.style.display   = 'flex';
+      loadEl.innerHTML       = '<div class="spinner-ring"></div><span class="loading-text">Finding streams…</span>';
+      playerEl.style.display = 'flex';
+
+      try {
+        if (!game.srcId) throw new Error('No stream listing found for this game');
+        const streams = await fetchStreams(sport.srcCat, game.srcId);
+        currentStreams = streams;
+
+        streams.forEach((s, i) => {
+          const btn = document.createElement('button');
+          btn.className = 'src-btn' + (i === 0 ? ' active' : '');
+          const src = s.source
+            ? s.source.charAt(0).toUpperCase() + s.source.slice(1)
+            : `Stream ${i + 1}`;
+          btn.textContent = `${src} ${s.hd ? '· HD' : '· SD'}`;
+          btn.onclick = () => {
+            document.querySelectorAll('.src-btn').forEach((b, j) =>
+              b.classList.toggle('active', j === i));
+            frameEl.src = s.embedUrl;
+          };
+          btnsEl.appendChild(btn);
+        });
+
+        loadEl.style.display  = 'none';
+        frameEl.style.display = 'block';
+        frameEl.src = streams[0].embedUrl;
+
+      } catch (err) {
+        // Show error inside the overlay — never hang on the spinner
+        loadEl.innerHTML = `
+          <div style="text-align:center;padding:24px">
+            <div style="font-size:36px;margin-bottom:12px">📡</div>
+            <div style="color:#f87171;font-weight:600;margin-bottom:6px">Stream unavailable</div>
+            <div style="color:var(--muted);font-size:13px;margin-bottom:20px">${err.message}</div>
+            <button onclick="closePlayer()" style="background:var(--grad);border:none;color:#fff;font-weight:700;font-family:inherit;border-radius:10px;padding:9px 20px;cursor:pointer;">Close</button>
+          </div>`;
+      }
+    }
+
+    document.getElementById('closePlayer').onclick = closePlayer;
 
     // ── Error ─────────────────────────────────────────────────────────
     function showError(msg) {
@@ -765,7 +825,16 @@
       const iso = document.getElementById('fetchDate').value || todayStr();
 
       await Promise.all(SPORTS.map(async sport => {
-        const games = await fetchLeague(sport.id, iso);
+        const [games, srcMatches] = await Promise.all([
+          fetchLeague(sport.id, iso),
+          loadSRCMatches(sport.srcCat),
+        ]);
+
+        // Tag each game with the real SportSRC match ID
+        games.forEach(g => {
+          g.srcId = findSRCId(srcMatches, g.away, g.home);
+        });
+
         games.sort((a, b) => {
           if (a.live && !b.live) return -1;
           if (!a.live && b.live) return  1;
