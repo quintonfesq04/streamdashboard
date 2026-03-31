@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ZONE — Sports Stream</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #07070f;
+      --surface:  #0f0f1c;
+      --card:     #12121f;
+      --border:   rgba(255,255,255,.07);
+      --text:     #eeeeff;
+      --muted:    #6b6b9a;
+      --purple:   #9333ea;
+      --pink:     #e11d84;
+      --cyan:     #00d4ff;
+      --orange:   #ff6b2b;
+      --green:    #00e676;
+      --grad:     linear-gradient(135deg, #9333ea, #e11d84);
+      --grad-h:   linear-gradient(135deg, #a855f7, #f43f8e);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ambient glow blobs in background */
+    body::before, body::after {
+      content: '';
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: .18;
+      pointer-events: none;
+      z-index: 0;
+    }
+    body::before {
+      width: 600px; height: 600px;
+      background: var(--purple);
+      top: -200px; left: -150px;
+    }
+    body::after {
+      width: 500px; height: 500px;
+      background: var(--pink);
+      bottom: -150px; right: -100px;
+    }
+
+    /* ── Header ───────────────────────────────────────────────────────── */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      padding: 0 24px;
+      height: 64px;
+      background: rgba(7,7,15,.85);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 32px;
+      letter-spacing: 3px;
+      background: var(--grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+    .logo span {
+      background: none;
+      -webkit-text-fill-color: rgba(255,255,255,.15);
+      font-size: 14px;
+      letter-spacing: 1px;
+      font-family: 'Inter', sans-serif;
+      font-weight: 500;
+      margin-left: 8px;
+      vertical-align: middle;
+      display: inline-block;
+      margin-top: 4px;
+    }
+
+    .header-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    input[type="date"] {
+      background: rgba(255,255,255,.05);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .2s;
+    }
+    input[type="date"]:focus { border-color: var(--purple); }
+
+    .btn-load {
+      background: var(--grad);
+      border: none;
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      font-family: inherit;
+      border-radius: 10px;
+      padding: 8px 18px;
+      cursor: pointer;
+      transition: opacity .2s, transform .15s;
+      letter-spacing: .3px;
+    }
+    .btn-load:hover { opacity: .85; transform: translateY(-1px); }
+
+    /* ── Sport tabs ───────────────────────────────────────────────────── */
+    nav {
+      display: flex;
+      gap: 2px;
+      padding: 0 20px;
+      background: rgba(7,7,15,.6);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      scrollbar-width: none;
+      position: sticky;
+      top: 64px;
+      z-index: 40;
+    }
+    nav::-webkit-scrollbar { display: none; }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 20px;
+      letter-spacing: 2px;
+      padding: 14px 22px 12px;
+      cursor: pointer;
+      position: relative;
+      transition: color .2s;
+      white-space: nowrap;
+    }
+    .tab-btn::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 50%;
+      transform: translateX(-50%) scaleX(0);
+      width: 70%;
+      height: 2px;
+      background: var(--grad);
+      border-radius: 2px 2px 0 0;
+      transition: transform .25s cubic-bezier(.34,1.56,.64,1);
+    }
+    .tab-btn:hover { color: #fff; }
+    .tab-btn.active { color: #fff; }
+    .tab-btn.active::after { transform: translateX(-50%) scaleX(1); }
+
+    /* ── Main content ─────────────────────────────────────────────────── */
+    main {
+      position: relative;
+      z-index: 1;
+      padding: 28px 24px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    #error {
+      display: none;
+      margin-bottom: 16px;
+      padding: 12px 16px;
+      border: 1px solid rgba(239,68,68,.4);
+      background: rgba(239,68,68,.08);
+      color: #fca5a5;
+      border-radius: 12px;
+    }
+
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* section header inside each page */
+    .page-header {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .page-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 36px;
+      letter-spacing: 3px;
+      background: var(--grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .game-count {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+    }
+
+    /* ── Games grid ───────────────────────────────────────────────────── */
+    .games-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+      gap: 16px;
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 40px 0;
+      font-size: 15px;
+      grid-column: 1/-1;
+    }
+
+    /* ── Game card ────────────────────────────────────────────────────── */
+    .game-card {
+      background: rgba(255,255,255,.03);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color .25s, transform .2s, box-shadow .25s;
+      cursor: default;
+    }
+    .game-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--grad);
+      opacity: 0;
+      transition: opacity .3s;
+      pointer-events: none;
+      border-radius: inherit;
+    }
+    .game-card:hover {
+      border-color: rgba(147,51,234,.5);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 40px rgba(147,51,234,.18), 0 0 0 1px rgba(147,51,234,.15);
+    }
+    .game-card:hover::before { opacity: .04; }
+
+    /* live card gets a subtle animated top border */
+    .game-card.is-live {
+      border-color: rgba(0,230,118,.3);
+      box-shadow: 0 0 0 1px rgba(0,230,118,.1);
+    }
+    .game-card.is-live::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--green), transparent);
+      animation: scan 2.5s linear infinite;
+    }
+    @keyframes scan {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+
+    .card-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .live-pill {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: rgba(0,230,118,.12);
+      border: 1px solid rgba(0,230,118,.3);
+      color: var(--green);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      border-radius: 999px;
+      padding: 3px 9px;
+      flex-shrink: 0;
+    }
+    .live-dot {
+      width: 6px; height: 6px;
+      background: var(--green);
+      border-radius: 50%;
+      animation: pulse-green 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse-green {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: .5; transform: scale(.7); }
+    }
+
+    .card-time {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .matchup {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .team-away {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -.2px;
+    }
+    .vs-line {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+      padding: 1px 0;
+    }
+    .team-home {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -.2px;
+    }
+
+    .watch-btn {
+      width: 100%;
+      padding: 11px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: inherit;
+      letter-spacing: .4px;
+      cursor: pointer;
+      background: var(--grad);
+      color: #fff;
+      border: none;
+      transition: opacity .2s, transform .15s, box-shadow .2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .watch-btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0);
+      transition: background .2s;
+    }
+    .watch-btn:hover { opacity: .88; transform: translateY(-1px); box-shadow: 0 6px 24px rgba(147,51,234,.4); }
+    .watch-btn:disabled {
+      background: rgba(255,255,255,.06);
+      color: var(--muted);
+      box-shadow: none;
+      transform: none;
+      cursor: default;
+    }
+
+    /* ── Player overlay ───────────────────────────────────────────────── */
+    #player {
+      position: fixed;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      z-index: 100;
+      background: #000;
+    }
+
+    .player-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 20px;
+      height: 56px;
+      background: rgba(7,7,15,.95);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+      overflow: hidden;
+    }
+
+    .player-matchup {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 20px;
+      letter-spacing: 1.5px;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 280px;
+    }
+
+    .divider { width: 1px; height: 24px; background: var(--border); flex-shrink: 0; }
+
+    .source-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .source-btns {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .src-btn {
+      background: rgba(255,255,255,.07);
+      border: 1px solid var(--border);
+      color: rgba(255,255,255,.6);
+      border-radius: 8px;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .src-btn:hover { background: rgba(255,255,255,.12); color: #fff; }
+    .src-btn.active {
+      background: var(--grad);
+      border-color: transparent;
+      color: #fff;
+      box-shadow: 0 2px 12px rgba(147,51,234,.4);
+    }
+
+    .spacer { flex: 1; }
+
+    .close-btn {
+      background: rgba(255,255,255,.07);
+      border: 1px solid var(--border);
+      color: rgba(255,255,255,.8);
+      border-radius: 10px;
+      padding: 6px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background .2s;
+    }
+    .close-btn:hover { background: rgba(255,255,255,.12); }
+
+    #playerLoading {
+      display: none;
+      flex: 1;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+      background: #000;
+    }
+    .spinner-ring {
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,.08);
+      border-top-color: var(--purple);
+      border-right-color: var(--pink);
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text {
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: .5px;
+    }
+
+    #playerFrame { width: 100%; flex: 1; border: 0; background: #000; }
+  </style>
+</head>
+<body>
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="logo">ZONE<span>SPORTS STREAM</span></div>
+    <div class="header-right">
+      <input type="date" id="fetchDate" />
+      <button class="btn-load" id="fetchBtn">Load Games</button>
+    </div>
+  </header>
+
+  <!-- ── Sport tabs ── -->
+  <nav id="sportTabs"></nav>
+
+  <!-- ── Content ── -->
+  <main>
+    <div id="error"></div>
+    <div id="pages"></div>
+  </main>
+
+  <!-- ── Player overlay ── -->
+  <section id="player">
+    <div class="player-bar">
+      <div class="player-matchup" id="playerTitle">Now Watching</div>
+      <div class="divider"></div>
+      <span class="source-label">Stream</span>
+      <div class="source-btns" id="sourceBtns"></div>
+      <span class="spacer"></span>
+      <button class="close-btn" id="closePlayer">✕ Close</button>
+    </div>
+    <div id="playerLoading">
+      <div class="spinner-ring"></div>
+      <span class="loading-text">Finding streams…</span>
+    </div>
+    <iframe id="playerFrame"
+      allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+      referrerpolicy="no-referrer" allowfullscreen></iframe>
+  </section>
+
+  <script>
+    // ── Config ────────────────────────────────────────────────────────
+    const SPORTS = [
+      { id: 'mlb', label: 'MLB', srcCat: 'baseball'          },
+      { id: 'nba', label: 'NBA', srcCat: 'basketball'        },
+      { id: 'nhl', label: 'NHL', srcCat: 'hockey'            },
+      { id: 'nfl', label: 'NFL', srcCat: 'american-football' },
+      { id: 'ufc', label: 'UFC', srcCat: 'fight'             },
+    ];
+
+    const ESPN = {
+      mlb: d => `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${d}`,
+      nba: d => `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${d}`,
+      nhl: d => `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard?dates=${d}`,
+      nfl: d => `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${d}`,
+      ufc: () => `https://site.api.espn.com/apis/personalized/v2/scoreboard/header?sport=mma&league=ufc`,
+    };
+
+    // ── Helpers ───────────────────────────────────────────────────────
+    const todayStr   = () => new Date().toISOString().slice(0, 10);
+    const toYYYYMMDD = iso => iso.replace(/-/g, '');
+    const slugify    = s => (s || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9\s-]/g, '')
+      .trim().replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    const matchId = (away, home) => `ppv-${slugify(away)}-vs-${slugify(home)}`;
+
+    // ── Build tabs & pages ────────────────────────────────────────────
+    const tabsEl  = document.getElementById('sportTabs');
+    const pagesEl = document.getElementById('pages');
+
+    SPORTS.forEach((sport, i) => {
+      // Tab button
+      const btn = document.createElement('button');
+      btn.className = 'tab-btn' + (i === 0 ? ' active' : '');
+      btn.textContent = sport.label;
+      btn.dataset.sport = sport.id;
+      btn.onclick = () => switchTab(sport.id);
+      tabsEl.appendChild(btn);
+
+      // Page
+      const page = document.createElement('div');
+      page.className = 'page' + (i === 0 ? ' active' : '');
+      page.id = `page-${sport.id}`;
+      page.innerHTML = `
+        <div class="page-header">
+          <span class="page-title">${sport.label}</span>
+          <span class="game-count" id="count-${sport.id}">Loading…</span>
+        </div>
+        <div class="games-grid" id="grid-${sport.id}">
+          <div class="empty">Loading games…</div>
+        </div>`;
+      pagesEl.appendChild(page);
+    });
+
+    function switchTab(id) {
+      document.querySelectorAll('.tab-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.sport === id));
+      document.querySelectorAll('.page').forEach(p =>
+        p.classList.toggle('active', p.id === `page-${id}`));
+    }
+
+    // ── ESPN fetch ────────────────────────────────────────────────────
+    function parseEvent(evt) {
+      const comps = evt?.competitions?.[0]?.competitors || [];
+      const h  = comps.find(c => c.homeAway === 'home') || comps[0] || {};
+      const a  = comps.find(c => c.homeAway === 'away') || comps[1] || {};
+      const ht = h.team || {}, at = a.team || {};
+      const name = t => t.displayName || (t.location && t.name ? `${t.location} ${t.name}` : t.name || '?');
+      const dt   = evt.date ? new Date(evt.date) : null;
+      const status = evt?.competitions?.[0]?.status?.type?.name || '';
+      return {
+        away: name(at), home: name(ht),
+        time: dt ? dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'TBD',
+        live: status === 'STATUS_IN_PROGRESS',
+      };
+    }
+
+    async function fetchLeague(league, isoDate) {
+      try {
+        const url = league === 'ufc' ? ESPN.ufc() : ESPN[league](toYYYYMMDD(isoDate));
+        const res  = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (league === 'ufc') {
+          return (data?.sports?.[0]?.leagues || []).flatMap(L => L?.events || []).map(e => {
+            const dt = e.date ? new Date(e.date) : null;
+            const m  = (e.name || '').match(/(.+?)\s+vs\.?\s+(.+)/i);
+            return {
+              away: m ? m[1].trim() : 'Fighter A',
+              home: m ? m[2].trim() : 'Fighter B',
+              time: dt ? dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'TBD',
+              live: false,
+            };
+          });
+        }
+        return (data?.events || []).map(parseEvent);
+      } catch (err) {
+        showError(`${league.toUpperCase()}: ${err.message}`);
+        return [];
+      }
+    }
+
+    // ── SportSRC stream fetch (on demand) ─────────────────────────────
+    async function fetchStreams(srcCat, away, home) {
+      const id  = matchId(away, home);
+      const res = await fetch(`https://api.sportsrc.org/?data=detail&category=${srcCat}&id=${id}`);
+      if (!res.ok) throw new Error(`SportSRC HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data.streams?.length) throw new Error('No streams available');
+      return data.streams;
+    }
+
+    // ── Render ────────────────────────────────────────────────────────
+    function renderGames(sportId, games, sport) {
+      const grid  = document.getElementById(`grid-${sportId}`);
+      const count = document.getElementById(`count-${sportId}`);
+      const live  = games.filter(g => g.live).length;
+
+      count.textContent = `${games.length} game${games.length !== 1 ? 's' : ''}${live ? ` · ${live} live` : ''}`;
+
+      if (!games.length) {
+        grid.innerHTML = `<div class="empty">No games scheduled for this date.</div>`;
+        return;
+      }
+
+      grid.innerHTML = '';
+      games.forEach(g => {
+        const card = document.createElement('div');
+        card.className = 'game-card' + (g.live ? ' is-live' : '');
+
+        card.innerHTML = `
+          <div class="card-top">
+            ${g.live
+              ? `<span class="live-pill"><span class="live-dot"></span>Live</span>`
+              : `<span class="card-time">${g.time}</span>`
+            }
+          </div>
+          <div class="matchup">
+            <div class="team-away">${g.away}</div>
+            <div class="vs-line">at</div>
+            <div class="team-home">${g.home}</div>
+          </div>
+          <button class="watch-btn">Watch Now</button>`;
+
+        const btn = card.querySelector('.watch-btn');
+        btn.onclick = async function () {
+          this.disabled = true;
+          this.textContent = 'Loading streams…';
+          try {
+            await openPlayer(g, sport);
+          } catch {
+            this.disabled = false;
+            this.textContent = 'Watch Now';
+          }
+        };
+        grid.appendChild(card);
+      });
+    }
+
+    // ── Player ────────────────────────────────────────────────────────
+    let currentStreams = [];
+
+    async function openPlayer(game, sport) {
+      const playerEl  = document.getElementById('player');
+      const frameEl   = document.getElementById('playerFrame');
+      const loadEl    = document.getElementById('playerLoading');
+      const btnsEl    = document.getElementById('sourceBtns');
+      const titleEl   = document.getElementById('playerTitle');
+
+      titleEl.textContent = `${game.away}  ·  ${game.home}`;
+      btnsEl.innerHTML = '';
+      frameEl.style.display = 'none';
+      loadEl.style.display  = 'flex';
+      playerEl.style.display = 'flex';
+
+      const streams = await fetchStreams(sport.srcCat, game.away, game.home);
+      currentStreams = streams;
+
+      streams.forEach((s, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'src-btn' + (i === 0 ? ' active' : '');
+        const src = s.source
+          ? s.source.charAt(0).toUpperCase() + s.source.slice(1)
+          : `Stream ${i + 1}`;
+        btn.textContent = `${src} ${s.hd ? '· HD' : '· SD'}`;
+        btn.onclick = () => {
+          document.querySelectorAll('.src-btn').forEach((b, j) =>
+            b.classList.toggle('active', j === i));
+          frameEl.src = s.embedUrl;
+        };
+        btnsEl.appendChild(btn);
+      });
+
+      loadEl.style.display  = 'none';
+      frameEl.style.display = 'block';
+      frameEl.src = streams[0].embedUrl;
+    }
+
+    document.getElementById('closePlayer').onclick = () => {
+      document.getElementById('playerFrame').src   = 'about:blank';
+      document.getElementById('player').style.display      = 'none';
+      document.getElementById('playerLoading').style.display = 'none';
+      document.getElementById('playerFrame').style.display   = 'block';
+      currentStreams = [];
+    };
+
+    // ── Error ─────────────────────────────────────────────────────────
+    function showError(msg) {
+      const box = document.getElementById('error');
+      box.style.display = 'block';
+      box.textContent += (box.textContent ? '\n' : '') + msg;
+    }
+
+    // ── Load all ──────────────────────────────────────────────────────
+    async function loadAll() {
+      document.getElementById('error').style.display = 'none';
+      document.getElementById('error').textContent   = '';
+
+      SPORTS.forEach(s => {
+        document.getElementById(`grid-${s.id}`).innerHTML =
+          `<div class="empty">Loading games…</div>`;
+        document.getElementById(`count-${s.id}`).textContent = 'Loading…';
+      });
+
+      const iso = document.getElementById('fetchDate').value || todayStr();
+
+      await Promise.all(SPORTS.map(async sport => {
+        const games = await fetchLeague(sport.id, iso);
+        games.sort((a, b) => {
+          if (a.live && !b.live) return -1;
+          if (!a.live && b.live) return  1;
+          return (a.time || '').localeCompare(b.time || '');
+        });
+        renderGames(sport.id, games, sport);
+      }));
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────
+    document.getElementById('fetchDate').value = todayStr();
+    document.getElementById('fetchBtn').addEventListener('click', loadAll);
+    document.addEventListener('DOMContentLoaded', loadAll);
+  </script>
+</body>
+</html>

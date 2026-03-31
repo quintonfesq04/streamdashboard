@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:sportsrc.org)",
+      "WebFetch(domain:api.sportsrc.org)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}
